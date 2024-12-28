@@ -66,11 +66,12 @@ class DetailedLoggingCallback(pl.Callback):
 class ImageNetTrainer:
     def __init__(self, config: Config):
         self.config = config
+        print("Loaded ImageNetTrainer...")
         logger.info("Initializing ImageNet Trainer...")
         
     def setup(self):
         logger.info("Setting up training...")
-        
+        print("setup training set....")
         # Initialize dataset
         dataset = ImageNetDataset(self.config)
         self.train_loader, self.val_loader = dataset.get_dataloaders(
@@ -80,8 +81,9 @@ class ImageNetTrainer:
                    f"Validation samples: {len(self.val_loader.dataset)}")
         
         # Initialize model
+        print('Begin to initialize model')
         self.model = ResNet50Module(config=self.config)
-        
+        print("model init done..")
         # Enable gradient checkpointing in the model
         if hasattr(self.model.model, 'set_grad_checkpointing'):
             self.model.model.set_grad_checkpointing(enable=True)
@@ -162,17 +164,20 @@ class ImageNetTrainer:
         )
         
 def train_imagenet(config: Config):
+    print("In train_imagenet...")
     logger.info("Starting ImageNet training process...")
     
     # Set environment variables for optimal performance
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Single GPU for Kaggle
-    
+
+    print("creating trainer instance...")
     # Create trainer instance
     trainer = ImageNetTrainer(config)
-    
+
+    print("Setting up trainer...")
     # Setup training
     trainer.setup()
-    
+    print("training start...")
     # Start training
     trainer.train()
     
