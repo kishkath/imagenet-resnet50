@@ -4,13 +4,13 @@ from typing import Tuple, List
 @dataclass
 class Config:
     # Data paths
-    data_dir: str = '/path/to/imagenet'  # Update this with your ImageNet path
+    data_dir: str = '/kaggle/working/imagenet'  # Default Kaggle path
     train_dir: str = 'train'
     val_dir: str = 'val'
     
     # Training parameters
-    batch_size: int = 256
-    num_workers: int = 8
+    batch_size: int = 128  # Reduced for Kaggle GPU
+    num_workers: int = 2   # Kaggle typically allows 2-4 workers
     epochs: int = 100
     
     # Model parameters
@@ -40,14 +40,18 @@ class Config:
     # Mixed precision
     use_amp: bool = True
     
-    # Distributed training
-    distributed: bool = True
+    # Single GPU for Kaggle
+    distributed: bool = False
     
     # Logging
-    log_every_n_steps: int = 100
+    log_every_n_steps: int = 10  # Increased frequency for better monitoring
     use_wandb: bool = True
-    project_name: str = 'imagenet_training'
+    project_name: str = 'imagenet_resnet50_kaggle'
     
     # Checkpointing
-    save_dir: str = 'checkpoints'
-    save_freq: int = 1 
+    save_dir: str = '/kaggle/working/checkpoints'
+    save_freq: int = 1
+    
+    # Kaggle-specific settings
+    val_check_interval: float = 0.5  # Validate every half epoch
+    gradient_clip_val: float = 1.0 

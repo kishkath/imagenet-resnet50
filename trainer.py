@@ -1,11 +1,9 @@
 import os
-import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.loggers import WandbLogger
 import torch.distributed as dist
-from pytorch_lightning.plugins import MixedPrecisionPlugin
 
 from config import Config
 from dataset import ImageNetDataset
@@ -58,27 +56,16 @@ class ImageNetTrainer:
         ]
         
     def train(self):
-        # Setup DDP strategy with NCCL backend
-        strategy = DDPStrategy(
-            process_group_backend="nccl",
-            find_unused_parameters=False,
-            gradient_as_bucket_view=True
-        ) if self.config.distributed else "auto"
+        # Setup strategy for single GPU training on Kaggle
+        strategy = "auto"
         
-        # Setup mixed precision plugin
-        precision_plugin = MixedPrecisionPlugin(
-            precision='16-mixed',
-            device='cuda',
-            scaler=None  # Let Lightning handle the scaler
-        )
-        
-        # Initialize trainer with optimized settings
+        # Initialize trainer with optimized settings for Kaggle
         trainer = pl.Trainer(
             max_epochs=self.config.epochs,
             accelerator='gpu',
-            devices=1,  # Use single GPU for Kaggle
+            devices=1,  # Single GPU for Kaggle
             strategy=strategy,
-            precision='16-mixed',  # Use mixed precision
+            precision=16 if self.config.use_amp else 32,  # Simplified precision setting
             callbacks=self.callbacks,
             logger=self.logger,
             log_every_n_steps=self.config.log_every_n_steps,
@@ -89,8 +76,6 @@ class ImageNetTrainer:
             enable_progress_bar=True,
             enable_model_summary=True,
             detect_anomaly=False,  # Faster training
-            plugins=[precision_plugin] if self.config.use_amp else None,
-            sync_batchnorm=self.config.distributed  # Only for multi-GPU
         )
         
         # Train
@@ -103,7 +88,6 @@ class ImageNetTrainer:
 def train_imagenet(config: Config):
     # Set environment variables for optimal performance
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Single GPU for Kaggle
-    os.environ["NCCL_DEBUG"] = "INFO"
     
     # Create trainer instance
     trainer = ImageNetTrainer(config)
