@@ -124,8 +124,12 @@ train_imagenet(config)
 
 1. **Memory Management**:
    - Use smaller batch size (128 or 64)
-   - Enable gradient checkpointing
+   - Gradient checkpointing is enabled by default in the model
    - Use mixed precision training
+   ```python
+   # If you need to manually adjust batch size for OOM errors
+   config.batch_size = 64  # or even 32 if needed
+   ```
 
 2. **Time Management**:
    - Kaggle notebooks have runtime limits (usually 12 hours for GPU)
@@ -185,17 +189,39 @@ train_imagenet(config)
 
 1. **OOM Errors**:
    ```python
-   config.batch_size //= 2  # Reduce batch size
-   config.gradient_checkpointing = True
+   # Reduce batch size
+   config.batch_size //= 2
+   
+   # Verify gradient checkpointing is enabled
+   print("Gradient Checkpointing:", 
+         any(getattr(m, 'gradient_checkpointing', False) 
+             for m in model.model.modules()))
    ```
 
 2. **Slow Training**:
    ```python
    # Monitor GPU utilization
    !nvidia-smi -l 1
+   
+   # Check memory usage
+   !nvidia-smi --query-gpu=memory.used,memory.total --format=csv
    ```
 
 3. **Runtime Disconnection**:
-   - Save checkpoints every epoch
+   - Save checkpoints every epoch (already configured)
    - Use WandB for metric tracking
-   - Keep notebook output minimal 
+   - Keep notebook output minimal
+   - Consider reducing validation frequency:
+   ```python
+   config.val_check_interval = 0.5  # Validate every 0.5 epochs
+   ```
+
+4. **Dataset Loading Issues**:
+   ```python
+   # Verify dataset is properly loaded
+   print("Training samples:", len(train_loader.dataset))
+   print("Validation samples:", len(val_loader.dataset))
+   
+   # Try reducing number of workers
+   config.num_workers = 1
+   ``` 
