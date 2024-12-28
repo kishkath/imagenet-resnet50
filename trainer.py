@@ -8,6 +8,7 @@ import torch
 import logging
 from tqdm import tqdm
 import sys
+from datetime import datetime
 
 # Import local modules
 from config import Config
@@ -15,53 +16,108 @@ from dataset import ImageNetDataset
 from model import ResNet50Module
 
 # Configure logging to display to both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('training.log')
-    ]
-)
-logger = logging.getLogger(__name__)
+class CustomFormatter(logging.Formatter):
+    def format(self, record):
+        # Add timestamp and make it visually distinct
+        record.message = record.getMessage()
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        
+        if record.levelno == logging.INFO:
+            return f"\033[92m{timestamp} | {record.message}\033[0m"  # Green color for info
+        elif record.levelno == logging.WARNING:
+            return f"\033[93m{timestamp} | WARNING: {record.message}\033[0m"  # Yellow for warnings
+        elif record.levelno == logging.ERROR:
+            return f"\033[91m{timestamp} | ERROR: {record.message}\033[0m"  # Red for errors
+        return f"{timestamp} | {record.message}"
 
-# Custom callback for detailed logging
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Console handler with colors
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(CustomFormatter())
+logger.addHandler(console_handler)
+
+# File handler with standard formatting
+file_handler = logging.FileHandler('training.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+
 class DetailedLoggingCallback(pl.Callback):
     def __init__(self):
         super().__init__()
         self.train_batch_size = None
         self.val_batch_size = None
         self.current_epoch = 0
+        self.training_start_time = None
+        
+    def on_train_start(self, trainer, pl_module):
+        self.training_start_time = datetime.now()
+        print("\n" + "="*100)
+        print(f"Training started at {self.training_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("="*100 + "\n")
         
     def on_train_epoch_start(self, trainer, pl_module):
         self.current_epoch = trainer.current_epoch
-        logger.info(f"\n{'='*80}\nStarting Epoch {self.current_epoch}\n{'='*80}")
+        epoch_str = f"Starting Epoch {self.current_epoch+1}/{trainer.max_epochs}"
+        print("\n" + "="*100)
+        print(f"{epoch_str:^100}")
+        print("="*100 + "\n")
         
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % 10 == 0:  # Log every 10 batches
             loss = outputs['loss'] if isinstance(outputs, dict) else outputs
-            logger.info(
-                f"Epoch {self.current_epoch} | Batch {batch_idx}/{len(trainer.train_dataloader)} | "
-                f"Loss: {loss:.4f} | LR: {trainer.optimizers[0].param_groups[0]['lr']:.6f}"
+            current_lr = trainer.optimizers[0].param_groups[0]['lr']
+            
+            # Calculate elapsed time and estimate remaining time
+            elapsed_time = datetime.now() - self.training_start_time
+            progress = (self.current_epoch * len(trainer.train_dataloader) + batch_idx) / \
+                      (trainer.max_epochs * len(trainer.train_dataloader))
+            if progress > 0:
+                estimated_total_time = elapsed_time / progress
+                remaining_time = estimated_total_time - elapsed_time
+            else:
+                remaining_time = None
+            
+            status = (
+                f"Epoch: {self.current_epoch+1}/{trainer.max_epochs} | "
+                f"Batch: {batch_idx}/{len(trainer.train_dataloader)} | "
+                f"Loss: {loss:.4f} | "
+                f"LR: {current_lr:.6f}"
             )
+            if remaining_time:
+                status += f" | Remaining: {str(remaining_time).split('.')[0]}"
+            
+            print(status)
+            sys.stdout.flush()
             
     def on_validation_epoch_start(self, trainer, pl_module):
-        logger.info(f"\n{'-'*80}\nStarting Validation\n{'-'*80}")
+        val_str = f"Validation - Epoch {self.current_epoch+1}/{trainer.max_epochs}"
+        print("\n" + "-"*100)
+        print(f"{val_str:^100}")
+        print("-"*100 + "\n")
         
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if batch_idx % 5 == 0:  # Log every 5 validation batches
             loss = outputs['loss'] if isinstance(outputs, dict) else outputs
-            logger.info(f"Validation Batch {batch_idx} | Loss: {loss:.4f}")
+            print(f"Validation Batch: {batch_idx}/{len(trainer.val_dataloaders[0])} | Loss: {loss:.4f}")
+            sys.stdout.flush()
             
     def on_train_epoch_end(self, trainer, pl_module):
         metrics = trainer.callback_metrics
-        logger.info(
-            f"\nEpoch {self.current_epoch} Results:\n"
-            f"{'='*40}\n"
-            f"Training Loss: {metrics.get('train_loss', 0):.4f}\n"
-            f"Training Acc: {metrics.get('train_acc', 0):.4f}\n"
-            f"{'='*40}\n"
+        train_loss = metrics.get('train_loss', 0)
+        train_acc = metrics.get('train_acc', 0)
+        
+        result_str = (
+            f"\nEpoch {self.current_epoch+1}/{trainer.max_epochs} Results:\n"
+            f"{'='*50}\n"
+            f"Training Loss: {train_loss:.4f}\n"
+            f"Training Accuracy: {train_acc:.4f}\n"
+            f"{'='*50}\n"
         )
+        print(result_str)
+        sys.stdout.flush()
 
 class ImageNetTrainer:
     def __init__(self, config: Config):

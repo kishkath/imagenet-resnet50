@@ -88,6 +88,12 @@ class ResNet50Module(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         images, labels = batch
+        
+        # Log batch processing
+        if batch_idx % 10 == 0:  # Every 10 batches
+            print(f"\rProcessing batch {batch_idx:5d} | Images: {images.shape} | Labels: {labels.shape}", end="")
+            sys.stdout.flush()
+        
         outputs = self(images)
         loss = self.criterion(outputs, labels)
         
@@ -100,20 +106,17 @@ class ResNet50Module(pl.LightningModule):
         self.log('train_loss', self.train_loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log('train_acc', self.train_acc, on_step=True, on_epoch=True, prog_bar=True)
         
-        # Update progress bar
-        if self.train_progress:
-            self.train_progress.update()
-        
-        # Detailed logging every n steps
-        if batch_idx % 10 == 0:  # Increased frequency for better visibility
-            logger.info(f"Training - Epoch: {self.current_epoch}, Step: {batch_idx}/{len(self.trainer.train_dataloader)}, "
-                       f"Loss: {loss:.4f}, Acc: {acc:.4f}")
-        
         # Return loss in the format expected by the callback
         return {'loss': loss, 'acc': acc}
     
     def validation_step(self, batch, batch_idx):
         images, labels = batch
+        
+        # Log batch processing
+        if batch_idx % 5 == 0:  # Every 5 batches
+            print(f"\rValidating batch {batch_idx:5d} | Images: {images.shape} | Labels: {labels.shape}", end="")
+            sys.stdout.flush()
+        
         outputs = self(images)
         loss = self.criterion(outputs, labels)
         
@@ -125,15 +128,6 @@ class ResNet50Module(pl.LightningModule):
         # Log metrics
         self.log('val_loss', self.val_loss, on_epoch=True, prog_bar=True)
         self.log('val_acc', self.val_acc, on_epoch=True, prog_bar=True)
-        
-        # Update progress bar
-        if self.val_progress:
-            self.val_progress.update()
-        
-        # Log first batch and every 10th batch
-        if batch_idx % 10 == 0:
-            logger.info(f"Validation - Batch: {batch_idx}/{len(self.trainer.val_dataloaders[0])}, "
-                       f"Loss: {loss:.4f}, Acc: {acc:.4f}")
         
         # Return loss in the format expected by the callback
         return {'loss': loss, 'acc': acc}
