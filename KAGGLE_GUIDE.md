@@ -92,16 +92,114 @@ train_imagenet(config)
 
 ## 6. Monitoring Training
 
-### 6.1. GPU Monitoring
-```python
-# Monitor GPU usage
-!nvidia-smi
+### 6.1. Real-Time Progress
+The training progress will be displayed in real-time with:
+- Progress bars for each epoch
+- Detailed metrics every 10 batches
+- Summary statistics at epoch end
+
+Example output:
+```
+===============================================================================
+Starting training epoch 0
+===============================================================================
+Epoch 0: 100%|██████████| 5004/5004 [09:23<00:00, 8.89it/s]
+2023-XX-XX HH:MM:SS - INFO - Training - Epoch: 0, Step: 10/5004, Loss: 6.9074, Acc: 0.0078
+2023-XX-XX HH:MM:SS - INFO - Training - Epoch: 0, Step: 20/5004, Loss: 6.8821, Acc: 0.0156
+
+Finished training epoch 0:
+========================================
+Training Loss: 6.7234
+Training Accuracy: 0.0234
+========================================
+
+--------------------------------------------------------------------------------
+Starting validation epoch 0
+--------------------------------------------------------------------------------
+Validation 0: 100%|██████████| 50/50 [00:23<00:00, 2.13it/s]
+2023-XX-XX HH:MM:SS - INFO - Validation - Batch: 0/50, Loss: 6.8123, Acc: 0.0195
+
+Finished validation epoch 0:
+----------------------------------------
+Validation Loss: 6.7891
+Validation Accuracy: 0.0273
+----------------------------------------
 ```
 
-### 6.2. Training Progress
+### 6.2. Monitoring Options
+
+1. **View Live Progress**:
 ```python
-# View latest training metrics
-!tail -f /kaggle/working/training.log
+# The progress will be displayed automatically in the notebook output
+```
+
+2. **Check GPU Usage**:
+```python
+# In a separate cell, run:
+!while true; do nvidia-smi; sleep 2; clear; done
+```
+
+3. **Monitor Memory**:
+```python
+# In a separate cell, run:
+!while true; do nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv -l 1; sleep 2; done
+```
+
+4. **View Log File**:
+```python
+# In a separate cell, run:
+!tail -f training.log
+```
+
+### 6.3. Training Metrics Visualization
+
+Run this in a separate cell to visualize training progress in real-time:
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
+import time
+
+def plot_metrics():
+    while True:
+        # Read log file
+        metrics = {
+            'epoch': [], 'train_loss': [], 'train_acc': [],
+            'val_loss': [], 'val_acc': []
+        }
+        
+        with open('training.log', 'r') as f:
+            for line in f:
+                if 'Finished training epoch' in line:
+                    # Parse training metrics
+                    pass
+                elif 'Finished validation epoch' in line:
+                    # Parse validation metrics
+                    pass
+        
+        # Create plots
+        clear_output(wait=True)
+        plt.figure(figsize=(15, 5))
+        
+        plt.subplot(1, 2, 1)
+        plt.plot(metrics['epoch'], metrics['train_loss'], label='Train')
+        plt.plot(metrics['epoch'], metrics['val_loss'], label='Val')
+        plt.title('Loss')
+        plt.legend()
+        
+        plt.subplot(1, 2, 2)
+        plt.plot(metrics['epoch'], metrics['train_acc'], label='Train')
+        plt.plot(metrics['epoch'], metrics['val_acc'], label='Val')
+        plt.title('Accuracy')
+        plt.legend()
+        
+        plt.tight_layout()
+        plt.show()
+        
+        time.sleep(10)  # Update every 10 seconds
+
+# Run in a separate cell:
+plot_metrics()
 ```
 
 ## 7. Saving Results
@@ -224,4 +322,56 @@ train_imagenet(config)
    
    # Try reducing number of workers
    config.num_workers = 1
+   ```
+
+5. **Log Analysis**:
+   ```python
+   # Check for errors in log
+   !grep "ERROR" training.log
+   
+   # View training progress
+   !grep "Finished training epoch" training.log | tail -n 5
+   
+   # View validation progress
+   !grep "Finished validation epoch" training.log | tail -n 5
+   
+   # Check learning rate changes
+   !grep "learning_rate" training.log
+   ```
+
+6. **Training Progress Visualization**:
+   ```python
+   import pandas as pd
+   import matplotlib.pyplot as plt
+   
+   # Extract metrics from log
+   def parse_metrics(log_file):
+       train_metrics = []
+       val_metrics = []
+       with open(log_file, 'r') as f:
+           for line in f:
+               if 'Finished training epoch' in line:
+                   # Parse and append training metrics
+                   pass
+               elif 'Finished validation epoch' in line:
+                   # Parse and append validation metrics
+                   pass
+       return pd.DataFrame(train_metrics), pd.DataFrame(val_metrics)
+   
+   train_df, val_df = parse_metrics('training.log')
+   
+   # Plot metrics
+   plt.figure(figsize=(12, 4))
+   plt.subplot(1, 2, 1)
+   plt.plot(train_df['epoch'], train_df['loss'], label='Train')
+   plt.plot(val_df['epoch'], val_df['loss'], label='Val')
+   plt.title('Loss')
+   plt.legend()
+   
+   plt.subplot(1, 2, 2)
+   plt.plot(train_df['epoch'], train_df['acc'], label='Train')
+   plt.plot(val_df['epoch'], val_df['acc'], label='Val')
+   plt.title('Accuracy')
+   plt.legend()
+   plt.show()
    ``` 
