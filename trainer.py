@@ -66,12 +66,10 @@ class DetailedLoggingCallback(pl.Callback):
 class ImageNetTrainer:
     def __init__(self, config: Config):
         self.config = config
-        print("Loaded ImageNetTrainer...")
         logger.info("Initializing ImageNet Trainer...")
         
     def setup(self):
         logger.info("Setting up training...")
-        print("setup training set....")
         # Initialize dataset
         dataset = ImageNetDataset(self.config)
         self.train_loader, self.val_loader = dataset.get_dataloaders(
@@ -81,9 +79,7 @@ class ImageNetTrainer:
                    f"Validation samples: {len(self.val_loader.dataset)}")
         
         # Initialize model
-        print('Begin to initialize model')
         self.model = ResNet50Module(config=self.config)
-        print("model init done..")
         # Enable gradient checkpointing in the model
         if hasattr(self.model.model, 'set_grad_checkpointing'):
             self.model.model.set_grad_checkpointing(enable=True)
@@ -155,8 +151,16 @@ class ImageNetTrainer:
             f"Gradient Clipping: {self.config.gradient_clip_val}\n"
             f"Validation Check Interval: {self.config.val_check_interval}"
         )
+        print(f"Training Configuration:\n"
+            f"Batch Size: {self.config.batch_size}\n"
+            f"Learning Rate: {self.config.learning_rate}\n"
+            f"Mixed Precision: {self.config.use_amp}\n"
+            f"Gradient Clipping: {self.config.gradient_clip_val}\n"
+            f"Validation Check Interval: {self.config.val_check_interval}"
+        )
         
         # Train
+        print('fitting trainer...')
         trainer.fit(
             model=self.model,
             train_dataloaders=self.train_loader,
