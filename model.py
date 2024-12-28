@@ -73,6 +73,9 @@ class ResNet50Module(pl.LightningModule):
         self.train_progress = None
         self.val_progress = None
     
+    def forward(self, x):
+        return self.model(x)
+    
     def on_train_epoch_start(self):
         logger.info(f"\n{'='*80}\nStarting training epoch {self.current_epoch}\n{'='*80}")
         total_batches = len(self.trainer.train_dataloader)
@@ -106,7 +109,8 @@ class ResNet50Module(pl.LightningModule):
             logger.info(f"Training - Epoch: {self.current_epoch}, Step: {batch_idx}/{len(self.trainer.train_dataloader)}, "
                        f"Loss: {loss:.4f}, Acc: {acc:.4f}")
         
-        return loss
+        # Return loss in the format expected by the callback
+        return {'loss': loss, 'acc': acc}
     
     def validation_step(self, batch, batch_idx):
         images, labels = batch
@@ -131,7 +135,8 @@ class ResNet50Module(pl.LightningModule):
             logger.info(f"Validation - Batch: {batch_idx}/{len(self.trainer.val_dataloaders[0])}, "
                        f"Loss: {loss:.4f}, Acc: {acc:.4f}")
         
-        return loss
+        # Return loss in the format expected by the callback
+        return {'loss': loss, 'acc': acc}
     
     def on_train_epoch_end(self):
         if self.train_progress:
