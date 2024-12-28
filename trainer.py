@@ -9,6 +9,11 @@ import logging
 from tqdm import tqdm
 import sys
 
+# Import local modules
+from config import Config
+from dataset import ImageNetDataset
+from model import ResNet50Module
+
 # Configure logging to display to both console and file
 logging.basicConfig(
     level=logging.INFO,
