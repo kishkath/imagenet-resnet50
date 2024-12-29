@@ -32,6 +32,7 @@ class Config:
     div_factor: float = 25.0
     three_phase: bool = True
     final_div_factor: float = 1e4
+    anneal_strategy: str = 'cos'
     
     # Image parameters
     image_size: int = 224
