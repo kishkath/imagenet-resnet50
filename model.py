@@ -31,14 +31,14 @@ class ResNet50Module(pl.LightningModule):
             self.config = config
             self.save_hyperparameters()
             
-            # Setup logging
-            self.logger = setup_logging()
-            self.logger.info("Initializing ResNet50 model...")
+            # Setup custom logger
+            self._custom_logger = setup_logging()
+            self._custom_logger.info("Initializing ResNet50 model...")
             
             # Create model
             self.model = models.resnet50(weights=None)
             self.model.fc = nn.Linear(self.model.fc.in_features, config.num_classes)
-            self.logger.info(f"Model created with {config.num_classes} output classes")
+            self._custom_logger.info(f"Model created with {config.num_classes} output classes")
             
             # Loss function
             self.criterion = nn.CrossEntropyLoss()
@@ -46,7 +46,7 @@ class ResNet50Module(pl.LightningModule):
             # Initialize metrics
             self._init_metrics()
             
-            self.logger.info("Model initialization completed")
+            self._custom_logger.info("Model initialization completed")
             
         except Exception as e:
             print(f"Error initializing ResNet50Module: {str(e)}")
@@ -66,17 +66,17 @@ class ResNet50Module(pl.LightningModule):
             self.current_val_loss = 0.0
             self.current_val_acc = 0.0
             
-            self.logger.info("Metrics initialized successfully")
+            self._custom_logger.info("Metrics initialized successfully")
             
         except Exception as e:
-            self.logger.error(f"Error initializing metrics: {str(e)}")
+            self._custom_logger.error(f"Error initializing metrics: {str(e)}")
             raise
         
     def forward(self, x):
         try:
             return self.model(x)
         except Exception as e:
-            self.logger.error(f"Error in forward pass: {str(e)}")
+            self._custom_logger.error(f"Error in forward pass: {str(e)}")
             raise
     
     def training_step(self, batch, batch_idx):
@@ -102,7 +102,7 @@ class ResNet50Module(pl.LightningModule):
             
             # Log to file periodically
             if batch_idx % 100 == 0:
-                self.logger.info(
+                self._custom_logger.info(
                     f"Training - Epoch: {self.current_epoch}, "
                     f"Batch: {batch_idx}, Loss: {loss:.4f}, Acc: {acc:.4f}"
                 )
@@ -110,7 +110,7 @@ class ResNet50Module(pl.LightningModule):
             return {'loss': loss, 'acc': acc}
             
         except Exception as e:
-            self.logger.error(f"Error in training step: {str(e)}")
+            self._custom_logger.error(f"Error in training step: {str(e)}")
             raise
     
     def validation_step(self, batch, batch_idx):
@@ -136,7 +136,7 @@ class ResNet50Module(pl.LightningModule):
             
             # Log to file periodically
             if batch_idx % 50 == 0:
-                self.logger.info(
+                self._custom_logger.info(
                     f"Validation - Epoch: {self.current_epoch}, "
                     f"Batch: {batch_idx}, Loss: {loss:.4f}, Acc: {acc:.4f}"
                 )
@@ -144,32 +144,32 @@ class ResNet50Module(pl.LightningModule):
             return {'loss': loss, 'acc': acc}
             
         except Exception as e:
-            self.logger.error(f"Error in validation step: {str(e)}")
+            self._custom_logger.error(f"Error in validation step: {str(e)}")
             raise
     
     def on_train_end(self):
         """Called when training ends"""
         try:
-            self.logger.info("\nTraining completed. Generating visualizations...")
+            self._custom_logger.info("\nTraining completed. Generating visualizations...")
             
             # Import here to avoid circular imports
             from visualize import visualize_training
             
             # Get the log file path from the logger
             log_file = None
-            for handler in self.logger.handlers:
+            for handler in self._custom_logger.handlers:
                 if isinstance(handler, logging.FileHandler):
                     log_file = handler.baseFilename
                     break
             
             if log_file:
                 visualize_training(log_file)
-                self.logger.info("Training visualizations generated successfully")
+                self._custom_logger.info("Training visualizations generated successfully")
             else:
-                self.logger.warning("Could not find log file for visualization")
+                self._custom_logger.warning("Could not find log file for visualization")
                 
         except Exception as e:
-            self.logger.error(f"Error generating training visualizations: {str(e)}")
+            self._custom_logger.error(f"Error generating training visualizations: {str(e)}")
             
     def on_train_epoch_end(self):
         try:
@@ -177,14 +177,14 @@ class ResNet50Module(pl.LightningModule):
             train_acc = self.train_acc.compute()
             
             # Log epoch results
-            self.logger.info(f"\nTraining Epoch {self.current_epoch} Results:")
-            self.logger.info(f"Loss: {train_loss:.4f}")
-            self.logger.info(f"Accuracy: {train_acc:.4f}")
+            self._custom_logger.info(f"\nTraining Epoch {self.current_epoch} Results:")
+            self._custom_logger.info(f"Loss: {train_loss:.4f}")
+            self._custom_logger.info(f"Accuracy: {train_acc:.4f}")
             
             # Log GPU memory stats
             allocated, cached = safe_cuda_memory_check()
             if allocated > 0:
-                self.logger.info(
+                self._custom_logger.info(
                     f"GPU Memory: {allocated:.1f}GB allocated, "
                     f"{cached:.1f}GB cached"
                 )
@@ -193,7 +193,7 @@ class ResNet50Module(pl.LightningModule):
             self.train_acc.reset()
             
         except Exception as e:
-            self.logger.error(f"Error in train epoch end: {str(e)}")
+            self._custom_logger.error(f"Error in train epoch end: {str(e)}")
     
     def on_validation_epoch_end(self):
         try:
@@ -201,19 +201,19 @@ class ResNet50Module(pl.LightningModule):
             val_acc = self.val_acc.compute()
             
             # Log epoch results
-            self.logger.info(f"\nValidation Epoch {self.current_epoch} Results:")
-            self.logger.info(f"Loss: {val_loss:.4f}")
-            self.logger.info(f"Accuracy: {val_acc:.4f}")
+            self._custom_logger.info(f"\nValidation Epoch {self.current_epoch} Results:")
+            self._custom_logger.info(f"Loss: {val_loss:.4f}")
+            self._custom_logger.info(f"Accuracy: {val_acc:.4f}")
             
             self.val_loss.reset()
             self.val_acc.reset()
             
         except Exception as e:
-            self.logger.error(f"Error in validation epoch end: {str(e)}")
+            self._custom_logger.error(f"Error in validation epoch end: {str(e)}")
     
     def configure_optimizers(self):
         try:
-            self.logger.info("\nConfiguring optimizer and scheduler...")
+            self._custom_logger.info("\nConfiguring optimizer and scheduler...")
             
             # Optimizer
             optimizer = SGD(
@@ -230,18 +230,18 @@ class ResNet50Module(pl.LightningModule):
             steps_per_epoch = self.trainer.estimated_stepping_batches // self.trainer.max_epochs
             total_steps = self.trainer.estimated_stepping_batches
             
-            self.logger.info(f"Training steps per epoch: {steps_per_epoch}")
-            self.logger.info(f"Total training steps: {total_steps}")
+            self._custom_logger.info(f"Training steps per epoch: {steps_per_epoch}")
+            self._custom_logger.info(f"Total training steps: {total_steps}")
             
             # Log learning rate schedule parameters
-            self.logger.info("\nLearning Rate Schedule Parameters:")
-            self.logger.info(f"Initial learning rate: {self.config.max_lr/self.config.div_factor:.6f}")
-            self.logger.info(f"Maximum learning rate: {self.config.max_lr:.6f}")
-            self.logger.info(f"Final learning rate: {self.config.max_lr/(self.config.div_factor*self.config.final_div_factor):.6f}")
-            self.logger.info(f"Warmup epochs: {int(self.config.epochs * self.config.pct_start)}")
-            self.logger.info(f"Annealing epochs: {self.config.epochs - int(self.config.epochs * self.config.pct_start)}")
-            self.logger.info(f"Three phase: {self.config.three_phase}")
-            self.logger.info(f"Annealing strategy: {self.config.anneal_strategy}")
+            self._custom_logger.info("\nLearning Rate Schedule Parameters:")
+            self._custom_logger.info(f"Initial learning rate: {self.config.max_lr/self.config.div_factor:.6f}")
+            self._custom_logger.info(f"Maximum learning rate: {self.config.max_lr:.6f}")
+            self._custom_logger.info(f"Final learning rate: {self.config.max_lr/(self.config.div_factor*self.config.final_div_factor):.6f}")
+            self._custom_logger.info(f"Warmup epochs: {int(self.config.epochs * self.config.pct_start)}")
+            self._custom_logger.info(f"Annealing epochs: {self.config.epochs - int(self.config.epochs * self.config.pct_start)}")
+            self._custom_logger.info(f"Three phase: {self.config.three_phase}")
+            self._custom_logger.info(f"Annealing strategy: {self.config.anneal_strategy}")
             
             # Scheduler with three-phase learning rate
             scheduler = OneCycleLR(
@@ -256,7 +256,7 @@ class ResNet50Module(pl.LightningModule):
                 anneal_strategy=self.config.anneal_strategy
             )
             
-            self.logger.info("Optimizer and scheduler configuration completed")
+            self._custom_logger.info("Optimizer and scheduler configuration completed")
             
             return {
                 "optimizer": optimizer,
@@ -267,5 +267,5 @@ class ResNet50Module(pl.LightningModule):
             }
             
         except Exception as e:
-            self.logger.error(f"Error configuring optimizers: {str(e)}")
+            self._custom_logger.error(f"Error configuring optimizers: {str(e)}")
             raise 
