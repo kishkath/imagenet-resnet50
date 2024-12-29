@@ -1,149 +1,90 @@
 import os
-import shutil
-import torch
-import psutil
 import logging
+import torch
 from pathlib import Path
 from datetime import datetime
 
-class TrainingError(Exception):
-    """Custom exception for training-related errors"""
-    pass
-
 class DatasetError(Exception):
-    """Custom exception for dataset-related errors"""
     pass
 
-def ensure_directory(path):
-    """Create directory if it doesn't exist"""
-    try:
-        Path(path).mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        print(f"Error creating directory {path}: {str(e)}")
-        raise
+class TrainingError(Exception):
+    pass
 
-def check_gpu_availability():
-    """Check GPU availability and return details"""
+def setup_logging(name='training', log_dir='logs'):
+    """Setup logging configuration"""
     try:
-        if torch.cuda.is_available():
-            gpu_name = torch.cuda.get_device_name(0)
-            memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-            return True, gpu_name, memory
-        return False, None, 0
+        # Create logs directory if it doesn't exist
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create timestamp for unique log file
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = os.path.join(log_dir, f'{name}_{timestamp}.log')
+        
+        # Configure logger
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+        
+        # Remove existing handlers if any
+        if logger.hasHandlers():
+            logger.handlers.clear()
+        
+        # File handler with detailed formatting
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s'
+        )
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+        
+        # Console handler with simple formatting
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_formatter = logging.Formatter('%(message)s')
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+        
+        logger.info(f'Logging setup complete. Logs will be saved to: {log_file}')
+        return logger
+        
     except Exception as e:
-        print(f"Error checking GPU availability: {str(e)}")
-        return False, None, 0
+        print(f'Error setting up logging: {str(e)}')
+        raise
 
 def safe_cuda_memory_check():
     """Safely check CUDA memory usage"""
     try:
         if torch.cuda.is_available():
-            memory_allocated = torch.cuda.memory_allocated(0) / 1e9
-            memory_cached = torch.cuda.memory_reserved(0) / 1e9
-            return memory_allocated, memory_cached
+            allocated = torch.cuda.memory_allocated() / 1024**3  # Convert to GB
+            cached = torch.cuda.memory_reserved() / 1024**3
+            return allocated, cached
         return 0, 0
-    except Exception as e:
-        print(f"Error checking CUDA memory: {str(e)}")
+    except Exception:
         return 0, 0
 
-def check_system_resources():
-    """Check if system has sufficient resources"""
+def ensure_dir_exists(path: str) -> None:
+    """Ensure directory exists, create if it doesn't"""
     try:
-        # Check available memory
-        memory = psutil.virtual_memory()
-        if memory.available < 8 * 1024 * 1024 * 1024:  # 8GB
-            print("Warning: Less than 8GB of RAM available")
-            return False
-            
-        # Check disk space
-        disk = psutil.disk_usage('/')
-        if disk.free < 50 * 1024 * 1024 * 1024:  # 50GB
-            print("Warning: Less than 50GB of disk space available")
-            return False
-            
-        # Check GPU memory if available
-        if torch.cuda.is_available():
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-            if gpu_memory < 8:  # 8GB
-                print("Warning: GPU has less than 8GB memory")
-                return False
-                
-        return True
-        
+        os.makedirs(path, exist_ok=True)
     except Exception as e:
-        print(f"Error checking system resources: {str(e)}")
-        return False
+        print(f'Error creating directory {path}: {str(e)}')
+        raise
 
-def cleanup_checkpoints(checkpoint_dir, keep_last=5):
-    """Clean up old checkpoints, keeping only the specified number of recent ones"""
+def clean_old_checkpoints(checkpoint_dir: str, keep_n: int = 3) -> None:
+    """Clean old checkpoints, keeping only the n most recent ones"""
     try:
         checkpoint_dir = Path(checkpoint_dir)
         if not checkpoint_dir.exists():
             return
             
-        checkpoints = list(checkpoint_dir.glob('*.ckpt'))
-        if len(checkpoints) <= keep_last:
-            return
-            
-        # Sort by modification time
-        checkpoints.sort(key=lambda x: x.stat().st_mtime)
-        
-        # Remove older checkpoints
-        for checkpoint in checkpoints[:-keep_last]:
-            checkpoint.unlink()
-            print(f"Removed old checkpoint: {checkpoint.name}")
-            
-    except Exception as e:
-        print(f"Error cleaning up checkpoints: {str(e)}")
-
-def save_backup(filename):
-    """Create a backup of important files"""
-    try:
-        if not os.path.exists(filename):
-            return
-            
-        # Create backups directory
-        backup_dir = Path('backups')
-        backup_dir.mkdir(exist_ok=True)
-        
-        # Create backup with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_path = backup_dir / f"{filename.replace('.', '_')}_{timestamp}.bak"
-        
-        shutil.copy2(filename, backup_path)
-        print(f"Created backup: {backup_path}")
-        
-    except Exception as e:
-        print(f"Error creating backup of {filename}: {str(e)}")
-
-def setup_logging(log_file='training.log'):
-    """Setup logging configuration"""
-    try:
-        # Create formatter
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+        checkpoints = sorted(
+            checkpoint_dir.glob('*.ckpt'),
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
         )
         
-        # Setup file handler
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        
-        # Setup console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        
-        # Get root logger
-        logger = logging.getLogger()
-        logger.setLevel(logging.INFO)
-        
-        # Remove existing handlers
-        logger.handlers = []
-        
-        # Add handlers
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        
+        for checkpoint in checkpoints[keep_n:]:
+            checkpoint.unlink()
+            
     except Exception as e:
-        print(f"Error setting up logging: {str(e)}")
-        raise 
+        print(f'Error cleaning checkpoints: {str(e)}') 

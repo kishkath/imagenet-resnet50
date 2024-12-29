@@ -7,7 +7,8 @@ import torchvision.models as models
 import sys
 from tqdm import tqdm
 import torchmetrics
-from utils import safe_cuda_memory_check, TrainingError
+from utils import safe_cuda_memory_check, TrainingError, setup_logging
+import logging
 
 class Config:
     def __init__(self, num_classes, learning_rate, momentum, weight_decay, max_lr, epochs, pct_start, div_factor, final_div_factor):
@@ -28,15 +29,14 @@ class ResNet50Module(pl.LightningModule):
             self.config = config
             self.save_hyperparameters()
             
-            print("Initializing ResNet50 model...")
+            # Setup logging
+            self.logger = setup_logging()
+            self.logger.info("Initializing ResNet50 model...")
             
             # Create model
-            # self.model = models.resnet50(num_classes=config.num_classes)
             self.model = models.resnet50(weights=None)
             self.model.fc = nn.Linear(self.model.fc.in_features, config.num_classes)
-            print(f"Model created with {config.num_classes} output classes")
-            print(f"Model Architecture: \n", self.model)
-
+            self.logger.info(f"Model created with {config.num_classes} output classes")
             
             # Loss function
             self.criterion = nn.CrossEntropyLoss()
@@ -44,7 +44,7 @@ class ResNet50Module(pl.LightningModule):
             # Initialize metrics
             self._init_metrics()
             
-            print("Model initialization completed")
+            self.logger.info("Model initialization completed")
             
         except Exception as e:
             print(f"Error initializing ResNet50Module: {str(e)}")
@@ -63,15 +63,18 @@ class ResNet50Module(pl.LightningModule):
             self.current_train_acc = 0.0
             self.current_val_loss = 0.0
             self.current_val_acc = 0.0
+            
+            self.logger.info("Metrics initialized successfully")
+            
         except Exception as e:
-            print(f"Error initializing metrics: {str(e)}")
+            self.logger.error(f"Error initializing metrics: {str(e)}")
             raise
         
     def forward(self, x):
         try:
             return self.model(x)
         except Exception as e:
-            print(f"Error in forward pass: {str(e)}")
+            self.logger.error(f"Error in forward pass: {str(e)}")
             raise
     
     def training_step(self, batch, batch_idx):
@@ -91,14 +94,21 @@ class ResNet50Module(pl.LightningModule):
             self.current_train_loss = loss.item()
             self.current_train_acc = acc.item()
             
-            # Log to progress bar
+            # Log metrics
             self.log('loss', loss, prog_bar=True)
             self.log('acc', acc, prog_bar=True)
+            
+            # Log to file periodically
+            if batch_idx % 100 == 0:
+                self.logger.info(
+                    f"Training - Epoch: {self.current_epoch}, "
+                    f"Batch: {batch_idx}, Loss: {loss:.4f}, Acc: {acc:.4f}"
+                )
             
             return {'loss': loss, 'acc': acc}
             
         except Exception as e:
-            print(f"Error in training step: {str(e)}")
+            self.logger.error(f"Error in training step: {str(e)}")
             raise
     
     def validation_step(self, batch, batch_idx):
@@ -118,54 +128,90 @@ class ResNet50Module(pl.LightningModule):
             self.current_val_loss = loss.item()
             self.current_val_acc = acc.item()
             
-            # Log to progress bar
+            # Log metrics
             self.log('val_loss', loss, prog_bar=True)
             self.log('val_acc', acc, prog_bar=True)
+            
+            # Log to file periodically
+            if batch_idx % 50 == 0:
+                self.logger.info(
+                    f"Validation - Epoch: {self.current_epoch}, "
+                    f"Batch: {batch_idx}, Loss: {loss:.4f}, Acc: {acc:.4f}"
+                )
             
             return {'loss': loss, 'acc': acc}
             
         except Exception as e:
-            print(f"Error in validation step: {str(e)}")
+            self.logger.error(f"Error in validation step: {str(e)}")
             raise
     
+    def on_train_end(self):
+        """Called when training ends"""
+        try:
+            self.logger.info("\nTraining completed. Generating visualizations...")
+            
+            # Import here to avoid circular imports
+            from visualize import visualize_training
+            
+            # Get the log file path from the logger
+            log_file = None
+            for handler in self.logger.handlers:
+                if isinstance(handler, logging.FileHandler):
+                    log_file = handler.baseFilename
+                    break
+            
+            if log_file:
+                visualize_training(log_file)
+                self.logger.info("Training visualizations generated successfully")
+            else:
+                self.logger.warning("Could not find log file for visualization")
+                
+        except Exception as e:
+            self.logger.error(f"Error generating training visualizations: {str(e)}")
+            
     def on_train_epoch_end(self):
         try:
             train_loss = self.train_loss.compute()
             train_acc = self.train_acc.compute()
             
-            print(f"\nTraining Epoch {self.current_epoch} Results:")
-            print(f"Loss: {train_loss:.4f}")
-            print(f"Accuracy: {train_acc:.4f}")
+            # Log epoch results
+            self.logger.info(f"\nTraining Epoch {self.current_epoch} Results:")
+            self.logger.info(f"Loss: {train_loss:.4f}")
+            self.logger.info(f"Accuracy: {train_acc:.4f}")
             
-            # Print GPU memory stats
+            # Log GPU memory stats
             allocated, cached = safe_cuda_memory_check()
             if allocated > 0:
-                print(f"GPU Memory: {allocated:.1f}GB allocated, {cached:.1f}GB cached")
+                self.logger.info(
+                    f"GPU Memory: {allocated:.1f}GB allocated, "
+                    f"{cached:.1f}GB cached"
+                )
             
             self.train_loss.reset()
             self.train_acc.reset()
             
         except Exception as e:
-            print(f"Error in train epoch end: {str(e)}")
+            self.logger.error(f"Error in train epoch end: {str(e)}")
     
     def on_validation_epoch_end(self):
         try:
             val_loss = self.val_loss.compute()
             val_acc = self.val_acc.compute()
             
-            print(f"\nValidation Epoch {self.current_epoch} Results:")
-            print(f"Loss: {val_loss:.4f}")
-            print(f"Accuracy: {val_acc:.4f}")
+            # Log epoch results
+            self.logger.info(f"\nValidation Epoch {self.current_epoch} Results:")
+            self.logger.info(f"Loss: {val_loss:.4f}")
+            self.logger.info(f"Accuracy: {val_acc:.4f}")
             
             self.val_loss.reset()
             self.val_acc.reset()
             
         except Exception as e:
-            print(f"Error in validation epoch end: {str(e)}")
+            self.logger.error(f"Error in validation epoch end: {str(e)}")
     
     def configure_optimizers(self):
         try:
-            print("\nConfiguring optimizer and scheduler...")
+            self.logger.info("\nConfiguring optimizer and scheduler...")
             
             # Optimizer
             optimizer = SGD(
@@ -182,8 +228,8 @@ class ResNet50Module(pl.LightningModule):
             steps_per_epoch = self.trainer.estimated_stepping_batches // self.trainer.max_epochs
             total_steps = self.trainer.estimated_stepping_batches
             
-            print(f"Training steps per epoch: {steps_per_epoch}")
-            print(f"Total training steps: {total_steps}")
+            self.logger.info(f"Training steps per epoch: {steps_per_epoch}")
+            self.logger.info(f"Total training steps: {total_steps}")
             
             # Scheduler
             scheduler = OneCycleLR(
@@ -196,7 +242,7 @@ class ResNet50Module(pl.LightningModule):
                 final_div_factor=self.config.final_div_factor
             )
             
-            print("Optimizer and scheduler configuration completed")
+            self.logger.info("Optimizer and scheduler configuration completed")
             
             return {
                 "optimizer": optimizer,
@@ -207,5 +253,5 @@ class ResNet50Module(pl.LightningModule):
             }
             
         except Exception as e:
-            print(f"Error configuring optimizers: {str(e)}")
+            self.logger.error(f"Error configuring optimizers: {str(e)}")
             raise 
