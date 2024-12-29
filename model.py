@@ -33,8 +33,10 @@ class ResNet50Module(pl.LightningModule):
             # Create model
             # self.model = models.resnet50(num_classes=config.num_classes)
             self.model = models.resnet50(weights=None)
-            model.fc = nn.Linear(self.model.fc.in_features, config.num_classes)
+            self.model.fc = nn.Linear(self.model.fc.in_features, config.num_classes)
             print(f"Model created with {config.num_classes} output classes")
+            print(f"Model Architecture: \n", self.model)
+
             
             # Loss function
             self.criterion = nn.CrossEntropyLoss()
