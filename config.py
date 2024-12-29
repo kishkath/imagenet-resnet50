@@ -30,6 +30,7 @@ class Config:
     max_lr: float = 0.1
     pct_start: float = 0.3
     div_factor: float = 25.0
+    three_phase: bool = True
     final_div_factor: float = 1e4
     
     # Image parameters
