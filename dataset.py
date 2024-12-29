@@ -36,12 +36,35 @@ class ImageNetDataset:
                     scale=(0.08, 1.0)
                 ),
                 A.HorizontalFlip(p=0.5),
-                A.ColorJitter(
-                    brightness=0.4,
-                    contrast=0.4,
-                    saturation=0.4,
-                    hue=0.2,
-                    p=0.8
+                A.OneOf([
+                    A.ColorJitter(
+                        brightness=0.4,
+                        contrast=0.4,
+                        saturation=0.4,
+                        hue=0.2,
+                        p=0.8
+                    ),
+                    A.ToGray(p=1.0),
+                ], p=0.5),
+                A.OneOf([
+                    A.GaussianBlur(blur_limit=(3, 7), p=1.0),
+                    A.GaussNoise(var_limit=(10.0, 50.0), p=1.0),
+                    A.ISONoise(p=1.0),
+                ], p=0.3),
+                A.OneOf([
+                    A.RandomBrightnessContrast(
+                        brightness_limit=0.2,
+                        contrast_limit=0.2,
+                        p=1.0
+                    ),
+                    A.CLAHE(clip_limit=4.0, tile_grid_size=(8, 8), p=1.0),
+                ], p=0.3),
+                A.ShiftScaleRotate(
+                    shift_limit=0.1,
+                    scale_limit=0.2,
+                    rotate_limit=30,
+                    border_mode=0,
+                    p=0.5
                 ),
                 A.Normalize(
                     mean=self.config.mean,
@@ -49,13 +72,6 @@ class ImageNetDataset:
                 ),
                 ToTensorV2()
             ]
-            
-            if self.config.use_autoaugment:
-                transform.insert(-2, A.augmentations.transforms.RandAugment(
-                    num_transforms=2,
-                    magnitude=9,
-                    p=1.0
-                ))
                 
             return A.Compose(transform)
             
