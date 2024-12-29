@@ -11,7 +11,7 @@ from utils import safe_cuda_memory_check, TrainingError, setup_logging
 import logging
 
 class Config:
-    def __init__(self, num_classes, learning_rate, momentum, weight_decay, max_lr, epochs, pct_start, div_factor, final_div_factor):
+    def __init__(self, num_classes, learning_rate, momentum, weight_decay, max_lr, epochs, pct_start, div_factor, final_div_factor, three_phase=True, anneal_strategy='cos'):
         self.num_classes = num_classes
         self.learning_rate = learning_rate
         self.momentum = momentum
@@ -21,6 +21,8 @@ class Config:
         self.pct_start = pct_start
         self.div_factor = div_factor
         self.final_div_factor = final_div_factor
+        self.three_phase = three_phase
+        self.anneal_strategy = anneal_strategy
 
 class ResNet50Module(pl.LightningModule):
     def __init__(self, config: Config):
@@ -231,7 +233,17 @@ class ResNet50Module(pl.LightningModule):
             self.logger.info(f"Training steps per epoch: {steps_per_epoch}")
             self.logger.info(f"Total training steps: {total_steps}")
             
-            # Scheduler
+            # Log learning rate schedule parameters
+            self.logger.info("\nLearning Rate Schedule Parameters:")
+            self.logger.info(f"Initial learning rate: {self.config.max_lr/self.config.div_factor:.6f}")
+            self.logger.info(f"Maximum learning rate: {self.config.max_lr:.6f}")
+            self.logger.info(f"Final learning rate: {self.config.max_lr/(self.config.div_factor*self.config.final_div_factor):.6f}")
+            self.logger.info(f"Warmup epochs: {int(self.config.epochs * self.config.pct_start)}")
+            self.logger.info(f"Annealing epochs: {self.config.epochs - int(self.config.epochs * self.config.pct_start)}")
+            self.logger.info(f"Three phase: {self.config.three_phase}")
+            self.logger.info(f"Annealing strategy: {self.config.anneal_strategy}")
+            
+            # Scheduler with three-phase learning rate
             scheduler = OneCycleLR(
                 optimizer,
                 max_lr=self.config.max_lr,
@@ -239,7 +251,9 @@ class ResNet50Module(pl.LightningModule):
                 steps_per_epoch=steps_per_epoch,
                 pct_start=self.config.pct_start,
                 div_factor=self.config.div_factor,
-                final_div_factor=self.config.final_div_factor
+                final_div_factor=self.config.final_div_factor,
+                three_phase=self.config.three_phase,
+                anneal_strategy=self.config.anneal_strategy
             )
             
             self.logger.info("Optimizer and scheduler configuration completed")
