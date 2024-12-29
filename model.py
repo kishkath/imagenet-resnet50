@@ -11,11 +11,41 @@ from utils import safe_cuda_memory_check, TrainingError, setup_logging
 import logging
 
 class Config:
-    def __init__(self, num_classes, learning_rate, momentum, weight_decay, max_lr, epochs, pct_start, div_factor, final_div_factor, three_phase=True, anneal_strategy='cos'):
+    def __init__(self, 
+                 num_classes: int,
+                 learning_rate: float,
+                 momentum: float,
+                 weight_decay: float,
+                 max_lr: float,
+                 epochs: int,
+                 pct_start: float,
+                 div_factor: float,
+                 final_div_factor: float,
+                 three_phase: bool = True,
+                 anneal_strategy: str = 'cos',
+                 batch_size: int = 32,
+                 num_workers: int = 4,
+                 pin_memory: bool = True,
+                 use_amp: bool = True,
+                 gradient_clip_val: float = 0.0,
+                 val_check_interval: float = 1.0,
+                 save_freq: int = 1,
+                 show_progress_bar: bool = True,
+                 log_every_n_steps: int = 50,
+                 save_dir: str = 'checkpoints',
+                 data_dir: str = 'data',
+                 distributed: bool = False,
+                 world_size: int = 1,
+                 rank: int = 0):
+        # Model parameters
         self.num_classes = num_classes
+        
+        # Optimizer parameters
         self.learning_rate = learning_rate
         self.momentum = momentum
         self.weight_decay = weight_decay
+        
+        # Learning rate schedule parameters
         self.max_lr = max_lr
         self.epochs = epochs
         self.pct_start = pct_start
@@ -23,6 +53,28 @@ class Config:
         self.final_div_factor = final_div_factor
         self.three_phase = three_phase
         self.anneal_strategy = anneal_strategy
+        
+        # Training parameters
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
+        self.use_amp = use_amp
+        self.gradient_clip_val = gradient_clip_val
+        self.val_check_interval = val_check_interval
+        
+        # Saving and logging parameters
+        self.save_freq = save_freq
+        self.show_progress_bar = show_progress_bar
+        self.log_every_n_steps = log_every_n_steps
+        self.save_dir = save_dir
+        
+        # Data parameters
+        self.data_dir = data_dir
+        
+        # Distributed training parameters
+        self.distributed = distributed
+        self.world_size = world_size
+        self.rank = rank
 
 class ResNet50Module(pl.LightningModule):
     def __init__(self, config: Config):
