@@ -1,6 +1,8 @@
 import os
 import logging
 import torch
+import shutil
+import psutil
 from pathlib import Path
 from datetime import datetime
 
@@ -62,7 +64,7 @@ def safe_cuda_memory_check():
     except Exception:
         return 0, 0
 
-def ensure_dir_exists(path: str) -> None:
+def ensure_directory(path: str) -> None:
     """Ensure directory exists, create if it doesn't"""
     try:
         os.makedirs(path, exist_ok=True)
@@ -70,21 +72,90 @@ def ensure_dir_exists(path: str) -> None:
         print(f'Error creating directory {path}: {str(e)}')
         raise
 
-def clean_old_checkpoints(checkpoint_dir: str, keep_n: int = 3) -> None:
-    """Clean old checkpoints, keeping only the n most recent ones"""
+# Alias for backward compatibility
+ensure_dir_exists = ensure_directory
+
+def check_gpu_availability():
+    """Check GPU availability and return details"""
+    try:
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            memory = torch.cuda.get_device_properties(0).total_memory / 1e9  # Convert to GB
+            return True, gpu_name, memory
+        return False, None, 0
+    except Exception as e:
+        print(f"Error checking GPU availability: {str(e)}")
+        return False, None, 0
+
+def check_system_resources():
+    """Check if system has sufficient resources"""
+    try:
+        # Check available memory
+        memory = psutil.virtual_memory()
+        if memory.available < 8 * 1024 * 1024 * 1024:  # 8GB
+            print("Warning: Less than 8GB of RAM available")
+            return False
+            
+        # Check disk space
+        disk = psutil.disk_usage('/')
+        if disk.free < 50 * 1024 * 1024 * 1024:  # 50GB
+            print("Warning: Less than 50GB of disk space available")
+            return False
+            
+        # Check GPU memory if available
+        if torch.cuda.is_available():
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+            if gpu_memory < 8:  # 8GB
+                print("Warning: GPU has less than 8GB memory")
+                return False
+                
+        return True
+        
+    except Exception as e:
+        print(f"Error checking system resources: {str(e)}")
+        return False
+
+def cleanup_checkpoints(checkpoint_dir: str, keep_last: int = 5):
+    """Clean up old checkpoints, keeping only the specified number of recent ones"""
     try:
         checkpoint_dir = Path(checkpoint_dir)
         if not checkpoint_dir.exists():
             return
             
-        checkpoints = sorted(
-            checkpoint_dir.glob('*.ckpt'),
-            key=lambda x: x.stat().st_mtime,
-            reverse=True
-        )
+        checkpoints = list(checkpoint_dir.glob('*.ckpt'))
+        if len(checkpoints) <= keep_last:
+            return
+            
+        # Sort by modification time
+        checkpoints.sort(key=lambda x: x.stat().st_mtime)
         
-        for checkpoint in checkpoints[keep_n:]:
+        # Remove older checkpoints
+        for checkpoint in checkpoints[:-keep_last]:
             checkpoint.unlink()
+            print(f"Removed old checkpoint: {checkpoint.name}")
             
     except Exception as e:
-        print(f'Error cleaning checkpoints: {str(e)}') 
+        print(f"Error cleaning up checkpoints: {str(e)}")
+
+def save_backup(filename: str):
+    """Create a backup of important files"""
+    try:
+        if not os.path.exists(filename):
+            return
+            
+        # Create backups directory
+        backup_dir = Path('backups')
+        backup_dir.mkdir(exist_ok=True)
+        
+        # Create backup with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = backup_dir / f"{filename.replace('.', '_')}_{timestamp}.bak"
+        
+        shutil.copy2(filename, backup_path)
+        print(f"Created backup: {backup_path}")
+        
+    except Exception as e:
+        print(f"Error creating backup of {filename}: {str(e)}")
+
+# Alias for backward compatibility
+clean_old_checkpoints = cleanup_checkpoints 
