@@ -1,148 +1,138 @@
-# ResNet50 ImageNet-1K Training
+# ResNet50 ImageNet Training
 
-This repository contains code for training ResNet50 from scratch on ImageNet-1K (ILSVRC2012), targeting 70% top-1 accuracy. The implementation uses PyTorch Lightning and supports distributed training, mixed precision, and various modern training techniques.
+A robust and efficient implementation for training ResNet50 on ImageNet, targeting 70% top-1 accuracy in around 100 epochs.
 
 ## Features
 
-- Distributed Data Parallel (DDP) training
-- Mixed Precision Training (AMP)
-- OneCycleLR scheduling
-- WandB integration for experiment tracking
-- Modular code structure
-- Both command-line and Jupyter notebook interfaces
+- **Efficient Training**
+  - Mixed precision training support
+  - Gradient checkpointing for memory efficiency
+  - Optimized data loading with Albumentations
+  - OneCycleLR scheduling for faster convergence
+
+- **Advanced Augmentations**
+  - RandAugment for automated augmentation
+  - MixUp augmentation support
+  - CutMix augmentation support
+  - Comprehensive validation transforms
+
+- **Robust Error Handling**
+  - Comprehensive error handling across all modules
+  - Custom exceptions for training and dataset errors
+  - Detailed error messages and logging
+  - System resource verification
+
+- **Real-time Monitoring**
+  - Console-based progress tracking
+  - GPU memory monitoring
+  - Training metrics visualization
+  - Resource usage tracking
+
+- **Flexible Configuration**
+  - Easy-to-modify configuration system
+  - Support for distributed training
+  - Automatic resource-based adjustments
+  - Configuration validation
 
 ## Requirements
 
-Install the required packages:
+```bash
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.21.0
+albumentations>=1.3.0
+pytorch-lightning>=2.0.0
+tqdm>=4.65.0
+pillow>=9.0.0
+pandas>=1.5.0
+pyyaml>=6.0
+```
 
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd <repository-name>
+```
+
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Dataset
+## Dataset Preparation
 
-This implementation uses the ImageNet-1K (ILSVRC2012) dataset from Hugging Face, which contains:
-- 1000 object classes
-- ~1.28 million training images
-- 50,000 validation images
-- Images are organized in folders by class
-
-### Dataset Setup
-
-1. The dataset will be automatically downloaded from Hugging Face on first use:
-```bash
-# Download and prepare dataset
-python download_dataset.py --data-dir /path/to/imagenet
+1. Download ImageNet-1K dataset
+2. Organize the dataset in the following structure:
 ```
-
-2. After the first download, the dataset will be cached by Hugging Face. Subsequent runs will use the cached version, making setup much faster.
-
-3. By default, the cache is stored in `~/.cache/huggingface/`. For EC2 instances, you might want to change the cache location:
-```bash
-# Set cache location (before running the download script)
-export HF_HOME=/data/huggingface_cache
-export HF_DATASETS_CACHE=/data/huggingface_cache/datasets
-```
-
-### Dataset Structure
-After download and preparation, the dataset will be organized as:
-```
-/path/to/imagenet/
-├── train/          # ~1.28M training images
-│   ├── n00000000/  # Class directories
-│   ├── n00000001/
-│   └── ...         # 1000 class folders total
-└── val/            # 50K validation images
-    ├── n00000000/
-    ├── n00000001/
-    └── ...         # 1000 class folders total
-```
-
-### Dataset Verification
-The download script automatically verifies the dataset, but you can run verification separately:
-```bash
-python verify_dataset.py --data-dir /path/to/imagenet
+data/imagenet/
+├── train/
+│   ├── n01440764/
+│   ├── n01443537/
+│   └── ...
+└── val/
+    ├── n01440764/
+    ├── n01443537/
+    └── ...
 ```
 
 ## Training
 
-### Command Line Interface
-
-To train using the command line interface:
+### Command Line Training
 
 ```bash
-python train.py --data-dir /path/to/imagenet \
-                --batch-size 256 \
-                --epochs 100 \
-                --workers 8 \
-                --lr 0.1 \
-                --wandb
+python train.py
 ```
 
-Additional options:
-- `--no-distributed`: Disable distributed training
-- `--no-amp`: Disable automatic mixed precision
-- `--save-dir`: Path to save checkpoints (default: 'checkpoints')
-- `--momentum`: SGD momentum (default: 0.9)
-- `--weight-decay`: Weight decay (default: 1e-4)
+### Configuration Options
+
+Key configurations in `config.py`:
+- `batch_size`: Training batch size (default: 128)
+- `learning_rate`: Initial learning rate (default: 0.1)
+- `epochs`: Number of training epochs (default: 100)
+- `use_amp`: Enable mixed precision training (default: True)
+- `use_autoaugment`: Enable RandAugment (default: True)
+- `use_cutmix`: Enable CutMix augmentation (default: True)
+- `use_mixup`: Enable MixUp augmentation (default: True)
 
 ### Jupyter Notebook
 
-Alternatively, you can use the provided Jupyter notebook `train.ipynb`. Open the notebook and update the configuration parameters according to your setup.
+See `train.ipynb` for interactive training and experimentation.
 
-## Training Configuration
+## Monitoring Training
 
-The training uses the following key configurations:
+- Real-time console output shows:
+  - Training/validation loss and accuracy
+  - Learning rate
+  - GPU memory usage
+  - Estimated time remaining
+  - Batch progress
 
-- **Optimizer**: SGD with momentum
-- **Learning Rate Schedule**: OneCycleLR
-  - max_lr: 0.1
-  - pct_start: 0.3
-  - div_factor: 25.0
-  - final_div_factor: 1e4
-- **Augmentations**:
-  - RandomResizedCrop
-  - RandomHorizontalFlip
-  - ColorJitter
-  - RandomGrayscale
-  - GaussianBlur
-- **Batch Size**: 256 per GPU
-- **Mixed Precision**: Enabled by default
-- **Gradient Clipping**: 1.0
+## Error Handling
 
-## AWS EC2 Setup
+The implementation includes comprehensive error handling:
+- Dataset structure verification
+- System resource checks
+- GPU memory monitoring
+- Automatic backup creation
+- Checkpoint management
 
-For training on AWS EC2:
+## Performance Tips
 
-1. Choose an appropriate instance type (recommended: p3.16xlarge or p4d.24xlarge)
-2. Use Deep Learning AMI with PyTorch support
-3. Configure security groups and networking
-4. Mount ImageNet dataset on a fast storage volume
-5. Update the data path in the configuration
+1. Adjust batch size based on available GPU memory
+2. Enable mixed precision training for faster execution
+3. Use gradient checkpointing for large models
+4. Adjust number of workers based on CPU cores
+5. Enable autoaugment for better generalization
 
-Example EC2 launch command:
-```bash
-aws ec2 run-instances \
-    --image-id ami-xxxxxxxx \
-    --instance-type p3.16xlarge \
-    --key-name your-key-pair \
-    --security-group-ids sg-xxxxxxxx \
-    --subnet-id subnet-xxxxxxxx \
-    --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3"}}]'
-```
+## Contributing
 
-## Monitoring
-
-The training progress can be monitored through:
-- WandB dashboard (if enabled)
-- Training logs
-- Saved checkpoints
-
-## Results
-
-Expected results after training:
-- Top-1 Accuracy: ~70% (after ~90-100 epochs)
-- Training time: ~3-4 days on 8 V100 GPUs
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
 
 ## License
 

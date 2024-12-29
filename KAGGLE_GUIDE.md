@@ -1,74 +1,56 @@
 # Running ResNet50 Training on Kaggle
 
-This guide provides step-by-step instructions for running the ResNet50 ImageNet training on Kaggle notebooks.
+This guide provides detailed instructions for running the ResNet50 ImageNet training code on Kaggle.
 
-## 1. Kaggle Setup Requirements
+## Setup Instructions
 
-### 1.1. Enable GPU and Internet
-1. Click on the "..." menu in your notebook
-2. Select "Settings"
-3. Enable:
-   - Internet: ON
-   - GPU: P100 (or better if available)
-   - Save settings
+### 1. Create a New Notebook
+- Start a new notebook on Kaggle
+- Enable GPU acceleration (Settings → Accelerator → GPU)
+- Enable internet access if needed
 
-### 1.2. Set Up Environment
-Add this at the start of your notebook:
-```python
-!pip install pytorch-lightning wandb albumentations --quiet
-```
-
-## 2. Clone Repository and Setup
-
+### 2. Environment Setup
 ```python
 # Clone the repository
-!git clone https://your-repo-url.git
-%cd your-repo
+!git clone <repository-url>
+%cd <repository-name>
 
-# Install requirements
+# Install dependencies
 !pip install -r requirements.txt
 ```
 
-## 3. Dataset Access
-
-Kaggle provides ImageNet through their datasets API. Add this to your notebook:
-
+### 3. Dataset Access
+- Add the ImageNet-1K dataset to your notebook
+- Update the data path in `config.py`:
 ```python
-# Import necessary libraries
-from kaggle.api.kaggle_api_extended import KaggleApi
-import os
-
-# Authenticate (make sure you have your kaggle.json in place)
-api = KaggleApi()
-api.authenticate()
-
-# Create data directory
-!mkdir -p /kaggle/working/imagenet
-
-# Download ImageNet from Kaggle Datasets
-!kaggle datasets download -d pytorch/imagenet
-!unzip -q imagenet.zip -d /kaggle/working/imagenet
+data_dir = '/kaggle/input/imagenet-1k'
 ```
 
-## 4. Modify Configuration
+## Configuration
 
-Create a cell with this configuration:
+### 1. Resource-Aware Settings
+The code automatically adjusts settings based on available resources:
+- Batch size adjustment based on GPU memory
+- Worker count optimization based on CPU cores
+- Gradient checkpointing for memory efficiency
+- Mixed precision training enabled by default
 
+### 2. Key Parameters
 ```python
 from config import Config
 
-config = Config()
-config.data_dir = '/kaggle/working/imagenet'
-config.batch_size = 128  # Adjust based on GPU memory
-config.epochs = 100
-config.num_workers = 2  # Kaggle typically allows 2-4 workers
-config.use_amp = True
-config.distributed = False  # Kaggle provides single GPU
+config = Config(
+    batch_size=128,  # Adjusted automatically if needed
+    epochs=100,
+    learning_rate=0.1,
+    use_amp=True,    # Mixed precision
+    num_workers=2    # Kaggle typically allows 2-4 workers
+)
 ```
 
-## 5. Training Launch
+## Training Process
 
-### 5.1. Basic Training
+### 1. Launch Training
 ```python
 from trainer import train_imagenet
 
@@ -76,302 +58,117 @@ from trainer import train_imagenet
 train_imagenet(config)
 ```
 
-### 5.2. With WandB Integration
-```python
-# Setup WandB
-import wandb
-wandb.login()  # You'll need to add your API key
-
-# Configure WandB
-config.use_wandb = True
-config.project_name = 'imagenet_resnet50_kaggle'
-
-# Start training
-train_imagenet(config)
-```
-
-## 6. Monitoring Training
-
-### 6.1. Real-Time Progress
-The training progress will be displayed in real-time with:
-- Progress bars for each epoch
-- Detailed metrics every 10 batches
-- Summary statistics at epoch end
+### 2. Monitor Progress
+The training progress is displayed in real-time:
+- Loss and accuracy metrics
+- Learning rate changes
+- GPU memory usage
+- Time estimates
+- Batch progress
 
 Example output:
 ```
-===============================================================================
-Starting training epoch 0
-===============================================================================
-Epoch 0: 100%|██████████| 5004/5004 [09:23<00:00, 8.89it/s]
-2023-XX-XX HH:MM:SS - INFO - Training - Epoch: 0, Step: 10/5004, Loss: 6.9074, Acc: 0.0078
-2023-XX-XX HH:MM:SS - INFO - Training - Epoch: 0, Step: 20/5004, Loss: 6.8821, Acc: 0.0156
-
-Finished training epoch 0:
-========================================
-Training Loss: 6.7234
-Training Accuracy: 0.0234
-========================================
-
---------------------------------------------------------------------------------
-Starting validation epoch 0
---------------------------------------------------------------------------------
-Validation 0: 100%|██████████| 50/50 [00:23<00:00, 2.13it/s]
-2023-XX-XX HH:MM:SS - INFO - Validation - Batch: 0/50, Loss: 6.8123, Acc: 0.0195
-
-Finished validation epoch 0:
-----------------------------------------
-Validation Loss: 6.7891
-Validation Accuracy: 0.0273
-----------------------------------------
+Epoch 1 | Batch 50/1000 | Loss: 6.4321 | Acc: 0.2345 | LR: 0.0100 | GPU Mem: 14.2GB | Elapsed: 00:05:23 | Remaining: 01:45:12
 ```
 
-### 6.2. Monitoring Options
+### 3. Resource Monitoring
+The code provides built-in resource monitoring:
+- GPU memory tracking
+- System memory checks
+- Disk space monitoring
+- Training speed metrics
 
-1. **View Live Progress**:
+## Error Handling
+
+The implementation includes robust error handling:
+- Dataset verification
+- Resource availability checks
+- Automatic error recovery
+- Detailed error messages
+
+Example error handling:
 ```python
-# The progress will be displayed automatically in the notebook output
+try:
+    train_imagenet(config)
+except Exception as e:
+    print(f"Training error: {str(e)}")
 ```
 
-2. **Check GPU Usage**:
+## Performance Optimization
+
+### 1. Memory Management
+- Enable gradient checkpointing:
 ```python
-# In a separate cell, run:
-!while true; do nvidia-smi; sleep 2; clear; done
+config.use_gradient_checkpointing = True
 ```
 
-3. **Monitor Memory**:
-```python
-# In a separate cell, run:
-!while true; do nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv -l 1; sleep 2; done
-```
+### 2. Training Speed
+- Use mixed precision training (enabled by default)
+- Optimize batch size for your GPU
+- Adjust number of workers based on CPU availability
 
-4. **View Log File**:
-```python
-# In a separate cell, run:
-!tail -f training.log
-```
+### 3. Data Augmentation
+Available augmentations:
+- RandAugment (automated augmentation)
+- MixUp
+- CutMix
+- Standard transforms (flip, crop, etc.)
 
-### 6.3. Training Metrics Visualization
+## Saving Results
 
-Run this in a separate cell to visualize training progress in real-time:
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
-from IPython.display import clear_output
-import time
+### 1. Checkpoints
+- Saved automatically in `/kaggle/working/checkpoints/`
+- Best models saved based on validation accuracy
+- Automatic cleanup of old checkpoints
 
-def plot_metrics():
-    while True:
-        # Read log file
-        metrics = {
-            'epoch': [], 'train_loss': [], 'train_acc': [],
-            'val_loss': [], 'val_acc': []
-        }
-        
-        with open('training.log', 'r') as f:
-            for line in f:
-                if 'Finished training epoch' in line:
-                    # Parse training metrics
-                    pass
-                elif 'Finished validation epoch' in line:
-                    # Parse validation metrics
-                    pass
-        
-        # Create plots
-        clear_output(wait=True)
-        plt.figure(figsize=(15, 5))
-        
-        plt.subplot(1, 2, 1)
-        plt.plot(metrics['epoch'], metrics['train_loss'], label='Train')
-        plt.plot(metrics['epoch'], metrics['val_loss'], label='Val')
-        plt.title('Loss')
-        plt.legend()
-        
-        plt.subplot(1, 2, 2)
-        plt.plot(metrics['epoch'], metrics['train_acc'], label='Train')
-        plt.plot(metrics['epoch'], metrics['val_acc'], label='Val')
-        plt.title('Accuracy')
-        plt.legend()
-        
-        plt.tight_layout()
-        plt.show()
-        
-        time.sleep(10)  # Update every 10 seconds
+### 2. Training Logs
+- Real-time console output
+- Detailed logging to file
+- Error logs and warnings
 
-# Run in a separate cell:
-plot_metrics()
-```
+## Troubleshooting
 
-## 7. Saving Results
+### Common Issues
 
-### 7.1. Save Checkpoints
-```python
-# Zip checkpoints
-!zip -r /kaggle/working/checkpoints.zip /kaggle/working/checkpoints
-
-# Download will be automatic in Kaggle interface
-```
-
-### 7.2. Save Logs
-```python
-# Zip logs
-!zip -r /kaggle/working/logs.zip /kaggle/working/logs
-```
-
-## 8. Best Practices for Kaggle
-
-1. **Memory Management**:
-   - Use smaller batch size (128 or 64)
-   - Gradient checkpointing is enabled by default in the model
+1. Out of Memory (OOM)
+   - Reduce batch size
+   - Enable gradient checkpointing
    - Use mixed precision training
-   ```python
-   # If you need to manually adjust batch size for OOM errors
-   config.batch_size = 64  # or even 32 if needed
-   ```
 
-2. **Time Management**:
-   - Kaggle notebooks have runtime limits (usually 12 hours for GPU)
-   - Save checkpoints frequently
-   - Use notebook checkpointing
+2. Slow Training
+   - Check GPU utilization
+   - Optimize number of workers
+   - Monitor data loading speed
 
-3. **Storage Management**:
-   - Clean up unnecessary files:
-   ```python
-   !rm -rf /kaggle/working/imagenet
-   ```
-   - Keep only essential checkpoints
+3. Dataset Issues
+   - Verify dataset structure
+   - Check data paths
+   - Monitor data loading errors
 
-4. **Code for Resuming Training**:
-```python
-# Load from checkpoint
-from trainer import train_imagenet
-config.resume_from_checkpoint = '/kaggle/working/checkpoints/last.ckpt'
-train_imagenet(config)
-```
+### Getting Help
+- Check error messages for detailed information
+- Review system resource warnings
+- Monitor GPU memory usage
+- Check training logs for warnings
 
-## 9. Complete Notebook Example
+## Best Practices
 
-```python
-# 1. Setup
-!pip install pytorch-lightning wandb albumentations --quiet
-!git clone https://your-repo-url.git
-%cd your-repo
-!pip install -r requirements.txt
+1. Resource Management
+   - Monitor GPU memory usage
+   - Keep track of disk space
+   - Watch system memory usage
 
-# 2. Configure
-from config import Config
-config = Config()
-config.data_dir = '/kaggle/working/imagenet'
-config.batch_size = 128
-config.epochs = 100
-config.num_workers = 2
-config.use_amp = True
-config.distributed = False
+2. Training Stability
+   - Start with default configurations
+   - Enable all error checks
+   - Monitor validation metrics
 
-# 3. Setup WandB (optional)
-import wandb
-wandb.login()
-config.use_wandb = True
-config.project_name = 'imagenet_resnet50_kaggle'
+3. Performance
+   - Use mixed precision training
+   - Enable gradient checkpointing
+   - Optimize batch size and workers
 
-# 4. Start Training
-from trainer import train_imagenet
-train_imagenet(config)
-
-# 5. Save Results
-!zip -r /kaggle/working/checkpoints.zip /kaggle/working/checkpoints
-!zip -r /kaggle/working/logs.zip /kaggle/working/logs
-```
-
-## 10. Troubleshooting
-
-1. **OOM Errors**:
-   ```python
-   # Reduce batch size
-   config.batch_size //= 2
-   
-   # Verify gradient checkpointing is enabled
-   print("Gradient Checkpointing:", 
-         any(getattr(m, 'gradient_checkpointing', False) 
-             for m in model.model.modules()))
-   ```
-
-2. **Slow Training**:
-   ```python
-   # Monitor GPU utilization
-   !nvidia-smi -l 1
-   
-   # Check memory usage
-   !nvidia-smi --query-gpu=memory.used,memory.total --format=csv
-   ```
-
-3. **Runtime Disconnection**:
-   - Save checkpoints every epoch (already configured)
-   - Use WandB for metric tracking
-   - Keep notebook output minimal
-   - Consider reducing validation frequency:
-   ```python
-   config.val_check_interval = 0.5  # Validate every 0.5 epochs
-   ```
-
-4. **Dataset Loading Issues**:
-   ```python
-   # Verify dataset is properly loaded
-   print("Training samples:", len(train_loader.dataset))
-   print("Validation samples:", len(val_loader.dataset))
-   
-   # Try reducing number of workers
-   config.num_workers = 1
-   ```
-
-5. **Log Analysis**:
-   ```python
-   # Check for errors in log
-   !grep "ERROR" training.log
-   
-   # View training progress
-   !grep "Finished training epoch" training.log | tail -n 5
-   
-   # View validation progress
-   !grep "Finished validation epoch" training.log | tail -n 5
-   
-   # Check learning rate changes
-   !grep "learning_rate" training.log
-   ```
-
-6. **Training Progress Visualization**:
-   ```python
-   import pandas as pd
-   import matplotlib.pyplot as plt
-   
-   # Extract metrics from log
-   def parse_metrics(log_file):
-       train_metrics = []
-       val_metrics = []
-       with open(log_file, 'r') as f:
-           for line in f:
-               if 'Finished training epoch' in line:
-                   # Parse and append training metrics
-                   pass
-               elif 'Finished validation epoch' in line:
-                   # Parse and append validation metrics
-                   pass
-       return pd.DataFrame(train_metrics), pd.DataFrame(val_metrics)
-   
-   train_df, val_df = parse_metrics('training.log')
-   
-   # Plot metrics
-   plt.figure(figsize=(12, 4))
-   plt.subplot(1, 2, 1)
-   plt.plot(train_df['epoch'], train_df['loss'], label='Train')
-   plt.plot(val_df['epoch'], val_df['loss'], label='Val')
-   plt.title('Loss')
-   plt.legend()
-   
-   plt.subplot(1, 2, 2)
-   plt.plot(train_df['epoch'], train_df['acc'], label='Train')
-   plt.plot(val_df['epoch'], val_df['acc'], label='Val')
-   plt.title('Accuracy')
-   plt.legend()
-   plt.show()
-   ``` 
+4. Data Handling
+   - Verify dataset before training
+   - Monitor data loading speed
+   - Check augmentation effects 

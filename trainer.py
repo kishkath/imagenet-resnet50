@@ -1,244 +1,232 @@
 import os
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-from pytorch_lightning.strategies import DDPStrategy
-from pytorch_lightning.loggers import WandbLogger
-import torch.distributed as dist
 import torch
-import logging
-from tqdm import tqdm
 import sys
 from datetime import datetime
+import time
+from tqdm import tqdm
+import numpy as np
+from pathlib import Path
 
 # Import local modules
 from config import Config
 from dataset import ImageNetDataset
 from model import ResNet50Module
+from utils import (
+    ensure_directory, check_gpu_availability, safe_cuda_memory_check,
+    cleanup_checkpoints, save_backup, check_system_resources,
+    TrainingError, DatasetError
+)
 
-# Configure logging to display to both console and file
-class CustomFormatter(logging.Formatter):
-    def format(self, record):
-        # Add timestamp and make it visually distinct
-        record.message = record.getMessage()
-        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
-        
-        if record.levelno == logging.INFO:
-            return f"\033[92m{timestamp} | {record.message}\033[0m"  # Green color for info
-        elif record.levelno == logging.WARNING:
-            return f"\033[93m{timestamp} | WARNING: {record.message}\033[0m"  # Yellow for warnings
-        elif record.levelno == logging.ERROR:
-            return f"\033[91m{timestamp} | ERROR: {record.message}\033[0m"  # Red for errors
-        return f"{timestamp} | {record.message}"
-
-# Set up logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Console handler with colors
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(CustomFormatter())
-logger.addHandler(console_handler)
-
-# File handler with standard formatting
-file_handler = logging.FileHandler('training.log')
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
-
-class DetailedLoggingCallback(pl.Callback):
+class ConsoleLogger:
     def __init__(self):
-        super().__init__()
-        self.train_batch_size = None
-        self.val_batch_size = None
-        self.current_epoch = 0
-        self.training_start_time = None
-        
-    def on_train_start(self, trainer, pl_module):
-        self.training_start_time = datetime.now()
-        print("\n" + "="*100)
-        print(f"Training started at {self.training_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*100 + "\n")
-        
-    def on_train_epoch_start(self, trainer, pl_module):
-        self.current_epoch = trainer.current_epoch
-        epoch_str = f"Starting Epoch {self.current_epoch+1}/{trainer.max_epochs}"
-        print("\n" + "="*100)
-        print(f"{epoch_str:^100}")
-        print("="*100 + "\n")
-        
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if batch_idx % 10 == 0:  # Log every 10 batches
-            loss = outputs['loss'] if isinstance(outputs, dict) else outputs
-            current_lr = trainer.optimizers[0].param_groups[0]['lr']
+        try:
+            self.start_time = None
+            self.epoch_start_time = None
+            self.last_log_time = None
+            self.train_losses = []
+            self.val_losses = []
+            self.train_accs = []
+            self.val_accs = []
+        except Exception as e:
+            print(f"Error initializing ConsoleLogger: {str(e)}")
+            raise
+    
+    def start_training(self):
+        try:
+            self.start_time = time.time()
+            self._print_header("Starting Training")
+            has_gpu, gpu_name, memory = check_gpu_availability()
+            if has_gpu:
+                print(f"Using GPU: {gpu_name} ({memory:.1f}GB)")
+                print(f"CUDA Version: {torch.version.cuda}")
+        except Exception as e:
+            print(f"Error in start_training: {str(e)}")
+    
+    def _print_header(self, text, width=100):
+        try:
+            print(f"\n{'='*width}")
+            print(f"{text:^{width}}")
+            print(f"{'='*width}\n")
+        except Exception as e:
+            print(f"Error printing header: {str(e)}")
+    
+    def _format_time(self, seconds):
+        try:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        except Exception as e:
+            print(f"Error formatting time: {str(e)}")
+            return "00:00:00"
+    
+    def log_batch(self, epoch, batch_idx, total_batches, loss, acc, lr):
+        try:
+            current_time = time.time()
             
-            # Calculate elapsed time and estimate remaining time
-            elapsed_time = datetime.now() - self.training_start_time
-            progress = (self.current_epoch * len(trainer.train_dataloader) + batch_idx) / \
-                      (trainer.max_epochs * len(trainer.train_dataloader))
-            if progress > 0:
-                estimated_total_time = elapsed_time / progress
-                remaining_time = estimated_total_time - elapsed_time
-            else:
-                remaining_time = None
-            
-            status = (
-                f"Epoch: {self.current_epoch+1}/{trainer.max_epochs} | "
-                f"Batch: {batch_idx}/{len(trainer.train_dataloader)} | "
-                f"Loss: {loss:.4f} | "
-                f"LR: {current_lr:.6f}"
-            )
-            if remaining_time:
-                status += f" | Remaining: {str(remaining_time).split('.')[0]}"
-            
-            print(status)
-            sys.stdout.flush()
-            
-    def on_validation_epoch_start(self, trainer, pl_module):
-        val_str = f"Validation - Epoch {self.current_epoch+1}/{trainer.max_epochs}"
-        print("\n" + "-"*100)
-        print(f"{val_str:^100}")
-        print("-"*100 + "\n")
-        
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if batch_idx % 5 == 0:  # Log every 5 validation batches
-            loss = outputs['loss'] if isinstance(outputs, dict) else outputs
-            print(f"Validation Batch: {batch_idx}/{len(trainer.val_dataloaders[0])} | Loss: {loss:.4f}")
-            sys.stdout.flush()
-            
-    def on_train_epoch_end(self, trainer, pl_module):
-        metrics = trainer.callback_metrics
-        train_loss = metrics.get('train_loss', 0)
-        train_acc = metrics.get('train_acc', 0)
-        
-        result_str = (
-            f"\nEpoch {self.current_epoch+1}/{trainer.max_epochs} Results:\n"
-            f"{'='*50}\n"
-            f"Training Loss: {train_loss:.4f}\n"
-            f"Training Accuracy: {train_acc:.4f}\n"
-            f"{'='*50}\n"
-        )
-        print(result_str)
-        sys.stdout.flush()
+            if self.last_log_time is None or (current_time - self.last_log_time) >= 1:
+                elapsed = current_time - self.start_time
+                epoch_elapsed = current_time - self.epoch_start_time
+                
+                batches_done = batch_idx + 1
+                speed = batches_done / epoch_elapsed if epoch_elapsed > 0 else 0
+                remaining_batches = total_batches - batches_done
+                epoch_remaining = remaining_batches / speed if speed > 0 else 0
+                
+                # Get GPU memory info
+                allocated, cached = safe_cuda_memory_check()
+                
+                status = (
+                    f"\rEpoch {epoch+1} | "
+                    f"Batch {batch_idx+1}/{total_batches} | "
+                    f"Loss: {loss:.4f} | "
+                    f"Acc: {acc:.4f} | "
+                    f"LR: {lr:.6f} | "
+                    f"GPU Mem: {allocated:.1f}GB | "
+                    f"Elapsed: {self._format_time(elapsed)} | "
+                    f"Remaining: {self._format_time(epoch_remaining)}"
+                )
+                
+                print(status, end="", flush=True)
+                self.last_log_time = current_time
+                
+        except Exception as e:
+            print(f"\nError logging batch: {str(e)}")
 
 class ImageNetTrainer:
     def __init__(self, config: Config):
-        self.config = config
-        logger.info("Initializing ImageNet Trainer...")
+        try:
+            self.config = config
+            self.logger = ConsoleLogger()
+            print("Initializing ImageNet Trainer...")
+            
+            # Ensure directories exist
+            ensure_directory(self.config.save_dir)
+            ensure_directory(Path(self.config.data_dir))
+            
+            # Check system resources
+            if not check_system_resources():
+                raise TrainingError("System resource check failed")
+                
+        except Exception as e:
+            print(f"Error initializing trainer: {str(e)}")
+            raise
         
     def setup(self):
-        logger.info("Setting up training...")
-        # Initialize dataset
-        dataset = ImageNetDataset(self.config)
-        self.train_loader, self.val_loader = dataset.get_dataloaders(
-            distributed=self.config.distributed
-        )
-        logger.info(f"Dataset loaded - Training samples: {len(self.train_loader.dataset)}, "
-                   f"Validation samples: {len(self.val_loader.dataset)}")
-        
-        # Initialize model
-        self.model = ResNet50Module(config=self.config)
-        # Enable gradient checkpointing in the model
-        if hasattr(self.model.model, 'set_grad_checkpointing'):
-            self.model.model.set_grad_checkpointing(enable=True)
-            logger.info("Gradient checkpointing enabled via set_grad_checkpointing")
-        else:
-            # Alternative way to enable gradient checkpointing for ResNet
-            for module in self.model.model.modules():
-                if isinstance(module, torch.nn.modules.container.Sequential):
-                    module.gradient_checkpointing = True
-            logger.info("Gradient checkpointing enabled via module setting")
-        
-        # Setup logging
-        if self.config.use_wandb:
-            self.logger = WandbLogger(
-                project=self.config.project_name,
-                log_model=True,
-                group=f"resnet50_{self.config.batch_size}_{self.config.learning_rate}"
+        try:
+            print("Setting up training...")
+            
+            # Initialize dataset
+            dataset = ImageNetDataset(self.config)
+            self.train_loader, self.val_loader = dataset.get_dataloaders(
+                distributed=self.config.distributed
             )
-            logger.info("WandB logging enabled")
-        else:
-            self.logger = True
-        
-        # Setup callbacks
-        self.callbacks = [
-            DetailedLoggingCallback(),
-            ModelCheckpoint(
-                dirpath=self.config.save_dir,
-                filename='resnet50-{epoch:02d}-{val_acc:.3f}',
-                monitor='val_acc',
-                mode='max',
-                save_top_k=3,
-                every_n_epochs=self.config.save_freq
-            ),
-            LearningRateMonitor(logging_interval='step')
-        ]
-        logger.info("Callbacks configured")
+            
+            if not self.train_loader or not self.val_loader:
+                raise DatasetError("Failed to initialize data loaders")
+                
+            print(f"Dataset loaded - Training samples: {len(self.train_loader.dataset)}, "
+                  f"Validation samples: {len(self.val_loader.dataset)}")
+            
+            # Initialize model
+            self.model = ResNet50Module(config=self.config)
+            
+            # Enable gradient checkpointing
+            try:
+                if hasattr(self.model.model, 'set_grad_checkpointing'):
+                    self.model.model.set_grad_checkpointing(enable=True)
+                    print("Gradient checkpointing enabled")
+            except Exception as e:
+                print(f"Warning: Could not enable gradient checkpointing: {str(e)}")
+            
+            # Setup callbacks with error handling
+            self.setup_callbacks()
+            
+        except Exception as e:
+            print(f"Error in setup: {str(e)}")
+            raise
+            
+    def setup_callbacks(self):
+        try:
+            self.callbacks = [
+                ModelCheckpoint(
+                    dirpath=self.config.save_dir,
+                    filename='resnet50-{epoch:02d}-{val_acc:.3f}',
+                    monitor='val_acc',
+                    mode='max',
+                    save_top_k=3,
+                    every_n_epochs=self.config.save_freq
+                ),
+                LearningRateMonitor(logging_interval='step')
+            ]
+        except Exception as e:
+            print(f"Error setting up callbacks: {str(e)}")
+            raise
         
     def train(self):
-        logger.info("Starting training...")
-        
-        # Setup strategy for single GPU training on Kaggle
-        strategy = "auto"
-        
-        # Initialize trainer with optimized settings for Kaggle
-        trainer = pl.Trainer(
-            max_epochs=self.config.epochs,
-            accelerator='gpu',
-            devices=1,  # Single GPU for Kaggle
-            strategy=strategy,
-            precision=16 if self.config.use_amp else 32,  # Simplified precision setting
-            callbacks=self.callbacks,
-            logger=self.logger,
-            log_every_n_steps=1,  # Log every step for detailed monitoring
-            gradient_clip_val=1.0,
-            accumulate_grad_batches=1,
-            deterministic=False,  # Faster training
-            benchmark=True,  # Optimize CUDA kernels
-            enable_progress_bar=True,
-            enable_model_summary=True,
-            detect_anomaly=False,  # Faster training
-            val_check_interval=self.config.val_check_interval
-        )
-        
-        logger.info(
-            f"Training Configuration:\n"
-            f"Batch Size: {self.config.batch_size}\n"
-            f"Learning Rate: {self.config.learning_rate}\n"
-            f"Mixed Precision: {self.config.use_amp}\n"
-            f"Gradient Clipping: {self.config.gradient_clip_val}\n"
-            f"Validation Check Interval: {self.config.val_check_interval}"
-        )
-        print(f"Training Configuration:\n"
-            f"Batch Size: {self.config.batch_size}\n"
-            f"Learning Rate: {self.config.learning_rate}\n"
-            f"Mixed Precision: {self.config.use_amp}\n"
-            f"Gradient Clipping: {self.config.gradient_clip_val}\n"
-            f"Validation Check Interval: {self.config.val_check_interval}"
-        )
-        
-        # Train
-        print('fitting trainer...')
-        trainer.fit(
-            model=self.model,
-            train_dataloaders=self.train_loader,
-            val_dataloaders=self.val_loader
-        )
-        
+        try:
+            self.logger.start_training()
+            
+            # Create backup of important files
+            save_backup('config.py')
+            save_backup('model.py')
+            
+            # Initialize trainer
+            trainer = pl.Trainer(
+                max_epochs=self.config.epochs,
+                accelerator='gpu' if torch.cuda.is_available() else 'cpu',
+                devices=1,
+                precision=16 if self.config.use_amp else 32,
+                callbacks=self.callbacks,
+                enable_progress_bar=self.config.show_progress_bar,
+                log_every_n_steps=self.config.log_every_n_steps,
+                val_check_interval=self.config.val_check_interval
+            )
+            
+            # Print training configuration
+            self.print_training_config()
+            
+            # Train
+            trainer.fit(
+                model=self.model,
+                train_dataloaders=self.train_loader,
+                val_dataloaders=self.val_loader
+            )
+            
+            # Cleanup old checkpoints
+            cleanup_checkpoints(self.config.save_dir)
+            
+        except Exception as e:
+            print(f"Error during training: {str(e)}")
+            raise
+            
+    def print_training_config(self):
+        try:
+            print("\nTraining Configuration:")
+            print(f"Batch Size: {self.config.batch_size}")
+            print(f"Learning Rate: {self.config.learning_rate}")
+            print(f"Mixed Precision: {self.config.use_amp}")
+            print(f"Gradient Clipping: {self.config.gradient_clip_val}")
+            print(f"Validation Check Interval: {self.config.val_check_interval}")
+        except Exception as e:
+            print(f"Error printing configuration: {str(e)}")
+
 def train_imagenet(config: Config):
-    print("In train_imagenet...")
-    logger.info("Starting ImageNet training process...")
-    
-    # Set environment variables for optimal performance
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Single GPU for Kaggle
-
-    print("creating trainer instance...")
-    # Create trainer instance
-    trainer = ImageNetTrainer(config)
-
-    print("Setting up trainer...")
-    # Setup training
-    trainer.setup()
-    print("training start...")
-    # Start training
-    trainer.train()
-    
-    logger.info("Training completed!") 
+    try:
+        print("\nStarting ImageNet training process...")
+        
+        # Set environment variables
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        
+        # Create and setup trainer
+        trainer = ImageNetTrainer(config)
+        trainer.setup()
+        
+        # Start training
+        trainer.train()
+        
+    except Exception as e:
+        print(f"Fatal error in training process: {str(e)}")
+        raise 
