@@ -157,20 +157,18 @@ class ImageNetDataset:
             # Create datasets
             train_dataset = datasets.ImageFolder(
                 os.path.join(self.config.data_dir, 'train'),
-                transform=transforms.Lambda(
-                    lambda x: torch.from_numpy(
-                        self.train_transform(image=np.array(x))['image']
-                    ).float()
-                )
+                transform=transforms.Compose([
+                    transforms.Lambda(lambda x: np.array(x)),
+                    transforms.Lambda(lambda x: self.train_transform(image=x)['image'])
+                ])
             )
             
             val_dataset = datasets.ImageFolder(
                 os.path.join(self.config.data_dir, 'val'),
-                transform=transforms.Lambda(
-                    lambda x: torch.from_numpy(
-                        self.val_transform(image=np.array(x))['image']
-                    ).float()
-                )
+                transform=transforms.Compose([
+                    transforms.Lambda(lambda x: np.array(x)),
+                    transforms.Lambda(lambda x: self.val_transform(image=x)['image'])
+                ])
             )
             
             # Create samplers for distributed training
